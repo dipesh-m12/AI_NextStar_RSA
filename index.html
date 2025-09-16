@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RSA Encryption Client</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #333;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #555;
+      }
+      textarea,
+      input {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e1e5e9;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: monospace;
+        resize: vertical;
+        box-sizing: border-box;
+      }
+      textarea {
+        min-height: 100px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 500;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .result {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        font-family: monospace;
+        word-break: break-all;
+      }
+      .success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+      }
+      .error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+      }
+      .status {
+        text-align: center;
+        margin: 10px 0;
+        font-weight: 500;
+      }
+      .buttons {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .buttons button {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>RSA Encryption Client</h1>
+
+      <div class="form-group">
+        <label for="serverUrl">Server URL:</label>
+        <input
+          type="text"
+          id="serverUrl"
+          value="http://localhost:3000"
+          placeholder="http://localhost:3000"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="messageInput">Message to encrypt:</label>
+        <textarea id="messageInput" placeholder="Enter your message here...">
+Hello, this is a secret message!</textarea
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="publicKeyInput">Public Key (PEM format):</label>
+        <textarea
+          id="publicKeyInput"
+          placeholder="-----BEGIN PUBLIC KEY-----
+...
+-----END PUBLIC KEY-----"
+        ></textarea>
+      </div>
+
+      <div class="buttons">
+        <button onclick="loadPublicKey()">Load Public Key from Server</button>
+        <button onclick="encryptAndSend()">Encrypt & Send to Server</button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="result"></div>
+    </div>
+
+    <script>
+      // RSA encryption using Web Crypto API
+      async function encryptWithPublicKey(message, publicKeyPem) {
+        try {
+          // Convert PEM to binary
+          const binaryDer = pemToArrayBuffer(publicKeyPem);
+
+          // Import the public key
+          const publicKey = await crypto.subtle.importKey(
+            "spki",
+            binaryDer,
+            {
+              name: "RSA-OAEP",
+              hash: "SHA-256",
+            },
+            false,
+            ["encrypt"]
+          );
+
+          // Encrypt the message
+          const encodedMessage = new TextEncoder().encode(message);
+          const encryptedBuffer = await crypto.subtle.encrypt(
+            "RSA-OAEP",
+            publicKey,
+            encodedMessage
+          );
+
+          // Convert to base64
+          const encryptedArray = new Uint8Array(encryptedBuffer);
+          return btoa(String.fromCharCode.apply(null, encryptedArray));
+        } catch (error) {
+          throw new Error(`Encryption failed: ${error.message}`);
+        }
+      }
+
+      // Convert PEM format to ArrayBuffer
+      function pemToArrayBuffer(pem) {
+        const base64 = pem
+          .replace(/-----BEGIN PUBLIC KEY-----/, "")
+          .replace(/-----END PUBLIC KEY-----/, "")
+          .replace(/\s/g, "");
+
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return bytes.buffer;
+      }
+
+      // Load public key from server
+      async function loadPublicKey() {
+        const serverUrl = document.getElementById("serverUrl").value;
+        const statusDiv = document.getElementById("status");
+
+        try {
+          statusDiv.textContent = "Loading public key...";
+
+          const response = await fetch(`${serverUrl}/public-key`);
+          const data = await response.json();
+
+          if (data.success) {
+            document.getElementById("publicKeyInput").value = data.publicKey;
+            statusDiv.textContent = "Public key loaded successfully!";
+            statusDiv.style.color = "#28a745";
+          } else {
+            throw new Error(data.error || "Failed to load public key");
+          }
+        } catch (error) {
+          statusDiv.textContent = `Error: ${error.message}`;
+          statusDiv.style.color = "#dc3545";
+        }
+      }
+
+      // Encrypt message and send to server
+      async function encryptAndSend() {
+        const message = document.getElementById("messageInput").value;
+        const publicKeyPem = document.getElementById("publicKeyInput").value;
+        const serverUrl = document.getElementById("serverUrl").value;
+        const statusDiv = document.getElementById("status");
+        const resultDiv = document.getElementById("result");
+
+        if (!message.trim()) {
+          alert("Please enter a message to encrypt");
+          return;
+        }
+
+        if (!publicKeyPem.trim()) {
+          alert("Please provide a public key");
+          return;
+        }
+
+        try {
+          statusDiv.textContent = "Encrypting message...";
+          statusDiv.style.color = "#007bff";
+
+          // Encrypt the message
+          const encryptedData = await encryptWithPublicKey(
+            message,
+            publicKeyPem
+          );
+
+          statusDiv.textContent = "Sending encrypted data to server...";
+
+          // Send encrypted data to server
+          const response = await fetch(`${serverUrl}/decrypt`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              encryptedData: encryptedData,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            statusDiv.textContent = "Success! Message encrypted and decrypted.";
+            statusDiv.style.color = "#28a745";
+
+            resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>Original Message:</strong> ${message}<br><br>
+                            <strong>Encrypted Data:</strong> ${encryptedData}<br><br>
+                            <strong>Decrypted Message:</strong> ${result.decryptedData}
+                        </div>
+                    `;
+          } else {
+            throw new Error(result.error || "Server error");
+          }
+        } catch (error) {
+          statusDiv.textContent = `Error: ${error.message}`;
+          statusDiv.style.color = "#dc3545";
+
+          resultDiv.innerHTML = `
+                    <div class="error">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+        }
+      }
+    </script>
+  </body>
+</html>
